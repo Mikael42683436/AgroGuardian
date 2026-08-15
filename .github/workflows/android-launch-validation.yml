@@ -1,0 +1,184 @@
+name: Validar abertura Android ARM
+
+
+
+on:
+
+  workflow_dispatch:
+  
+  push:
+  
+    paths:
+    
+      - '.github/workflows/android-launch-validation.yml'
+      
+
+
+jobs:
+
+  validar-apk:
+  
+    name: Instalar e abrir variante AgroGuardian ARM64
+    
+    runs-on: ubuntu-24.04-arm
+    
+    timeout-minutes: 50
+    
+    steps:
+    
+      - uses: actions/checkout@v6
+      
+
+
+      - name: Baixar APK sob teste
+      
+        run: |
+        
+          set -euo pipefail
+          
+          curl --fail --location --retry 3 \
+          
+            --output AgroGuardian-ESP32-ao-vivo-primary-dex.apk \
+            
+            'https://files.manuscdn.com/user_upload_by_module/session_file/310519663877923110/TWUHxMnrYZDGleGl.apk'
+            
+          sha256sum AgroGuardian-ESP32-ao-vivo-primary-dex.apk | tee apk-sha256.txt
+          
+
+
+      - name: Inicializar Android ARM64 e verificar abertura
+      
+        uses: reactivecircus/android-emulator-runner@v2
+        
+        with:
+        
+          api-level: 30
+          
+          target: google_apis
+          
+          arch: arm64-v8a
+          
+          ram-size: 2048M
+          
+          heap-size: 256M
+          
+          disable-animations: true
+          
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect -camera-back none
+          
+          script: |
+          
+            set -euo pipefail
+            
+            adb devices
+            
+            adb shell getprop ro.product.cpu.abilist
+            
+            adb install -r AgroGuardian-ESP32-ao-vivo-primary-dex.apk
+            
+            adb logcat -c
+            
+            adb shell am force-stop com.app.agroguardian
+            
+            adb shell monkey -p com.app.agroguardian -c android.intent.category.LAUNCHER 1
+            
+            sleep 20
+            
+            pid="$(adb shell pidof com.app.agroguardian | tr -d '\r')"
+            
+            adb logcat -d -v threadtime > logcat-launch.txt || true
+            
+            adb shell dumpsys activity activities > activity-state.txt || true
+            
+            printf 'PID=%s\n' "$pid" | tee process-state.txt
+            
+            test -n "$pid"
+            
+            if grep -Eq 'FATAL EXCEPTION|Fatal signal|Process: com\.app\.agroguardian' logcat-launch.txt; then
+            
+              echo 'Foi detectada uma exceção fatal durante a abertura.' >&2
+              
+              exit 1
+              
+            fi
+            
+
+
+      - name: Publicar evidências do teste
+      
+        if: always()
+        
+        uses: actions/upload-artifact@v6
+        
+        with:
+        
+          name: android-arm-launch-evidence
+          
+          path: |
+          
+            apk-sha256.txt
+            
+            logcat-launch.txt
+            
+            activity-state.txt
+            
+            process-state.txt
+            
+          if-no-files-found: warn
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
